@@ -71,5 +71,5 @@ def mkdir(path):
     if not folder:
         os.makedirs(path)
 
-
-crawler_thebump()
+if __name__ == "__main__":
+    crawler_thebump()
