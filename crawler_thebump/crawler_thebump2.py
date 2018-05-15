@@ -3,8 +3,10 @@ from bs4 import BeautifulSoup
 import re
 import json
 import pandas as pd
+import pymongo
 
 
+# 主程序
 def crawler_thebump2():
     html = requests.get("https://www.thebump.com/real-answers/stages")
     soup = BeautifulSoup(html.text, features="lxml")
@@ -32,15 +34,30 @@ def crawler_thebump2():
             subcategory_name = subcategory["name"]
             print ("getting subcategory=" + subcategory_name)
 
+            ######################################################################
+            # 修改这里，选择保存到CSV还是Mongo
+            ######################################################################
             save_questions_to_csv(
                 stage_id=subcategory["id"],
                 category_name=category_name,
                 subcategory_name=subcategory_name,
                 page_size=500
             )
+            # 注意：保存至Mongo时不查重
+            # save_questions_to_mongo(
+            #     stage_id=subcategory["id"],
+            #     category_name=category_name,
+            #     subcategory_name=subcategory_name,
+            #     page_size=500,
+            #     mongo_host="localhost",
+            #     port=27017,
+            #     database_name="local",
+            #     collection_name="thebump_questions"
+            # )
 
 
 
+# 保存至CSV文件
 def save_questions_to_csv(stage_id, category_name, subcategory_name, page_size=30):
     url = "https://www.thebump.com/real-answers/v1/categories/{stage_id}/questions?filter=ranking"
     url = url.format(stage_id=stage_id)
@@ -86,6 +103,53 @@ def save_questions_to_csv(stage_id, category_name, subcategory_name, page_size=3
             content = requests.get(url, params=params).json()
         else:
             break
+
+
+# 保存至Mongo数据库(无查重功能)
+def save_questions_to_mongo(stage_id, category_name, 
+        subcategory_name, page_size=30,
+        mongo_host="localhost", port=27017,
+        database_name="local", collection_name="thebump_questions"):
+
+    client = pymongo.MongoClient(host=mongo_host, port=port)
+    db = client[database_name]
+    collection = db[collection_name]
+
+    url = "https://www.thebump.com/real-answers/v1/categories/{stage_id}/questions?filter=ranking"
+    url = url.format(stage_id=stage_id)
+    params = {
+        "page_num": 1,
+        "page_size": page_size,
+    }
+
+    # 第一遍可以得到total的值
+    content = requests.get(url, params=params).json()
+    total = content["total"]
+
+    # 这相当于一个do-while
+    # 一次循环保存page_size条问题
+    while True:
+        datas = []
+        for question in content["questions"]:
+            data = {}
+            data["title"] = question["title"].replace("\n", " ")
+            data["created_at"] = question["created_at"]
+            data["user_id"] = question["user_id"]
+            data["username"] = question["user"]["username"]
+            data["category_name"] = category_name
+            data["subcategory_name"] = subcategory_name
+            datas.append(data)
+
+        collection.insert_many(datas)
+
+        total -= page_size
+        if (total > 0):
+            params["page_num"] += 1
+            content = requests.get(url, params=params).json()
+        else:
+            break
+    
+    
 
 
 if __name__ == "__main__":
