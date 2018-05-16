@@ -4,6 +4,7 @@ import re
 import json
 import pandas as pd
 import pymongo
+import threading
 
 
 # 主程序
@@ -20,6 +21,8 @@ def crawler_thebump2():
     script = soup.find("script", text=pattern)
     result = pattern2.search(pattern.search(script.text).group(0)).group(0)
     result = json.loads(result)
+
+    threads = []
     
     for category in result:
         category_name = category["name"]
@@ -35,14 +38,15 @@ def crawler_thebump2():
             print ("getting subcategory=" + subcategory_name)
 
             ######################################################################
-            # 修改这里，选择保存到CSV还是Mongo
+            # 选择保存到CSV还是Mongo
+            # 单线程选项
             ######################################################################
-            save_questions_to_csv(
-                stage_id=subcategory["id"],
-                category_name=category_name,
-                subcategory_name=subcategory_name,
-                page_size=500
-            )
+            # save_questions_to_csv(
+            #     stage_id=subcategory["id"],
+            #     category_name=category_name,
+            #     subcategory_name=subcategory_name,
+            #     page_size=500
+            # )
             # 注意：保存至Mongo时不查重
             # save_questions_to_mongo(
             #     stage_id=subcategory["id"],
@@ -54,6 +58,36 @@ def crawler_thebump2():
             #     database_name="local",
             #     collection_name="thebump_questions"
             # )
+
+            ######################################################################
+            # 选择保存到CSV还是Mongo
+            # 多线程选项
+            ######################################################################
+            thread = threading.Thread(target=save_questions_to_csv, 
+                args=(
+                    subcategory["id"], 
+                    category_name,
+                    subcategory_name, 
+                    500
+                ))
+            # thread = threading.Thread(target=save_questions_to_mongo, 
+            #     args=(
+            #         subcategory["id"], 
+            #         category_name,
+            #         subcategory_name, 
+            #         500,
+            #         "localhost",
+            #         27017,
+            #         "local",
+            #         "thebump_questions",
+            #         True
+            #     ))
+            thread.start()
+            threads.append(thread)
+    
+    for thread in threads:
+        thread.join()
+        
 
 
 
@@ -105,11 +139,12 @@ def save_questions_to_csv(stage_id, category_name, subcategory_name, page_size=3
             break
 
 
-# 保存至Mongo数据库(无查重功能)
+# 保存至Mongo数据库
 def save_questions_to_mongo(stage_id, category_name, 
         subcategory_name, page_size=30,
         mongo_host="localhost", port=27017,
-        database_name="local", collection_name="thebump_questions"):
+        database_name="local", collection_name="thebump_questions",
+        check_duplicate=True):
 
     client = pymongo.MongoClient(host=mongo_host, port=port)
     db = client[database_name]
@@ -138,9 +173,17 @@ def save_questions_to_mongo(stage_id, category_name,
             data["username"] = question["user"]["username"]
             data["category_name"] = category_name
             data["subcategory_name"] = subcategory_name
-            datas.append(data)
+            
+            if (check_duplicate == True):
+                if (collection.find_one({"title": data["title"]}) is None):
+                    collection.insert_one(data)
+                else:
+                    print ("find 1 duplicated")
+            else:
+                datas.append(data)
 
-        collection.insert_many(datas)
+        if (check_duplicate == False):
+            collection.insert_many(datas)   
 
         total -= page_size
         if (total > 0):
