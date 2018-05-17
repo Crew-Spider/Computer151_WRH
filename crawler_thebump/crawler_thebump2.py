@@ -5,6 +5,7 @@ import json
 import pandas as pd
 import pymongo
 import threading
+import os
 
 
 # 主程序
@@ -93,6 +94,8 @@ def crawler_thebump2():
 
 # 保存至CSV文件
 def save_questions_to_csv(stage_id, category_name, subcategory_name, page_size=30):
+    csvfile_name = "data.csv"
+
     url = "https://www.thebump.com/real-answers/v1/categories/{stage_id}/questions?filter=ranking"
     url = url.format(stage_id=stage_id)
     params = {
@@ -128,7 +131,12 @@ def save_questions_to_csv(stage_id, category_name, subcategory_name, page_size=3
             "username", "category_name", "subcategory_name"
         ]
 
-        with open("data.csv", "a") as f:
+        # 添加列名
+        if not os.path.exists(csvfile_name):
+            with open(csvfile_name, "a") as f:
+                pd.DataFrame({}, columns=columns).to_csv(f, index=False)
+
+        with open(csvfile_name, "a") as f:
             pd.DataFrame(data, columns=columns).to_csv(f, header=False, index=False)
         
         total -= page_size
